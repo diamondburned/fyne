@@ -43,14 +43,29 @@ func (s *session) init() {
 	s.displayRoundTrip()
 	s.displayRoundTrip()
 
+	s.cursorTheme, err = cursor.LoadTheme("", 24, s.shm)
+	must(err, "cannot load Wayland cursor theme")
+}
+
+func (s *session) attachKeyboard() {
+	var err error
+
 	s.keyboard, err = s.seat.GetKeyboard()
 	must(err, "cannot get Wayland keyboard")
 
 	s.keyboard.AddKeymapHandler(s.handleKeyboardKeymap)
 	s.keyboard.AddModifiersHandler(s.handleKeyboardModifiers)
+}
 
-	s.cursorTheme, err = cursor.LoadTheme("", 24, s.shm)
-	must(err, "cannot load Wayland cursor theme")
+func (s *session) detachKeyboard() error {
+	if s.keyboard == nil {
+		return nil
+	}
+
+	err := s.keyboard.Release()
+	s.keyboard = nil
+
+	return err
 }
 
 func (s *session) displayRoundTrip() {
@@ -71,7 +86,7 @@ func (s *session) displayRoundTrip() {
 func (s *session) destroy() {
 	errors := []error{
 		s.cursorTheme.Destroy(),
-		s.keyboard.Release(),
+		s.detachKeyboard(),
 		s.seat.Release(),
 		s.xdgWmBase.Destroy(),
 		s.shm.Destroy(),
@@ -119,8 +134,26 @@ func (s *session) handleRegistryGlobalEvent(ev client.RegistryGlobalEvent) {
 	}
 }
 
-func (s *session) handleSeatCapabilities(ev client.SeatCapabilitiesEvent) {
+func (s *session) handleWmBasePing(ev xdg_shell.WmBasePingEvent) {
+	err := s.xdgWmBase.Pong(ev.Serial)
+	must(err, "cannot ping Wayland server")
+}
 
+func (s *session) handleSeatCapabilities(ev client.SeatCapabilitiesEvent) {
+	has := func(cap client.SeatCapability) bool {
+		return ev.Capabilities&uint32(cap) != 0
+	}
+
+	if has(client.SeatCapabilityKeyboard) {
+		s.attachKeyboard()
+	} else {
+		s.detachKeyboard()
+	}
+
+	// TODO pointer
+	if has(client.SeatCapabilityPointer) {
+	} else {
+	}
 }
 
 func (s *session) handleKeyboardKeymap(ev client.KeyboardKeymapEvent) {

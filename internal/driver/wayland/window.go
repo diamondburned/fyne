@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/driver/desktop"
 	"github.com/rajveermalviya/go-wayland/wayland/client"
 	xdg_shell "github.com/rajveermalviya/go-wayland/wayland/stable/xdg-shell"
 )
@@ -91,12 +92,12 @@ func newWindow(s *state, appID, title string) *window {
 func (w *window) handleSurfaceConfigure(ev xdg_shell.SurfaceConfigureEvent) {
 	var err error
 
-	err = w.window.xdgSurface.AckConfigure(ev.Serial)
-	must(err, "cannot send Wayland surface ack")
-
 	// SurfaceConfigure should always follow after a toplevel configure event,
 	// so we can assume that the buffer has already been reallocated.
 	w.canvas.commit()
+
+	err = w.window.xdgSurface.AckConfigure(ev.Serial)
+	must(err, "cannot send Wayland surface ack")
 }
 
 func (w *window) handleToplevelConfigure(ev xdg_shell.ToplevelConfigureEvent) {
@@ -268,4 +269,27 @@ func (w *window) Canvas() fyne.Canvas {
 
 func (w *window) Clipboard() fyne.Clipboard {
 	panic("implement me")
+}
+
+func (w *window) onKey(state client.KeyboardKeyState, fkey *fyne.KeyEvent) {
+	switch state {
+	case client.KeyboardKeyStateReleased:
+		if focused, _ := w.canvas.Focused().(desktop.Keyable); focused != nil {
+			focused.KeyUp(fkey)
+		} else if w.canvas.onKeyUp != nil {
+			w.canvas.onKeyUp(fkey)
+		}
+	case client.KeyboardKeyStatePressed:
+		if focused, _ := w.canvas.Focused().(desktop.Keyable); focused != nil {
+			focused.KeyDown(fkey)
+		} else if w.canvas.onKeyDown != nil {
+			w.canvas.onKeyDown(fkey)
+		}
+	}
+
+	if focused := w.canvas.Focused(); focused != nil {
+		focused.TypedKey(fkey)
+	} else if w.canvas.onTypedKey != nil {
+		w.canvas.onTypedKey(fkey)
+	}
 }
